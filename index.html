@@ -487,6 +487,30 @@
   }
   .wl-tag-remove:hover { color: var(--sell); }
 
+  /* column filter dropdowns */
+  .th-wrap { display: flex; flex-direction: column; gap: 5px; }
+  .th-label { font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: var(--text3); cursor: pointer; user-select: none; }
+  .th-label:hover { color: var(--text2); }
+  .col-sel {
+    appearance: none; -webkit-appearance: none;
+    background: var(--bg3);
+    border: 1px solid var(--border2);
+    border-radius: 6px;
+    color: var(--text2);
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 3px 20px 3px 7px;
+    outline: none;
+    cursor: pointer;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%2355556a'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 6px center;
+    min-width: 88px;
+  }
+  .col-sel:focus { border-color: rgba(255,255,255,0.3); }
+  .col-sel option { background: #1a1a24; color: var(--text); }
+  .col-sel.filtered { border-color: var(--buy); color: var(--buy); }
+
   /* star button in main table */
   .star-btn {
     background: none;
@@ -546,6 +570,9 @@
       onkeydown="if(event.key==='Enter')addToWatchlist()">
     <button class="wl-add-btn" onclick="addToWatchlist()">+ 添加</button>
     <span class="wl-hint">支持 S&amp;P500 内外任意代码</span>
+    <button class="refresh-btn" id="wlRefreshBtn" onclick="loadWatchlistOnly()" style="margin-left:auto">
+      <span class="spin" id="wlSpinIcon">↻</span> 刷新观察名单
+    </button>
     <button class="wl-clear-btn" onclick="clearWatchlist()">清空全部</button>
   </div>
   <div class="wl-tags" id="wlTags">
@@ -586,27 +613,8 @@
 </div>
 
 <div class="controls">
-  <div class="filter-group">
-    <button class="fbtn active" id="fAll"   onclick="setFilter('all',this)">全部</button>
-    <button class="fbtn buy"   id="fBuy"   onclick="setFilter('buy',this)">买点</button>
-    <button class="fbtn sell"  id="fSell"  onclick="setFilter('sell',this)">卖点</button>
-    <button class="fbtn watch" id="fWatch" onclick="setFilter('watch',this)">观察</button>
-  </div>
   <input class="search" id="searchInput" placeholder="搜索代码 / 名称..." oninput="applyFilters()">
-  <select class="sector-sel" id="sectorSel" onchange="applyFilters()">
-    <option value="">全部板块</option>
-    <option value="Technology">科技</option>
-    <option value="Healthcare">医疗健康</option>
-    <option value="Financials">金融</option>
-    <option value="Consumer Discretionary">可选消费</option>
-    <option value="Consumer Staples">必需消费</option>
-    <option value="Energy">能源</option>
-    <option value="Industrials">工业</option>
-    <option value="Utilities">公用事业</option>
-    <option value="Materials">材料</option>
-    <option value="Real Estate">房地产</option>
-    <option value="Communication Services">通信服务</option>
-  </select>
+  <button class="fbtn" onclick="resetFilters()" style="opacity:0.6" title="清除全部筛选">✕ 重置</button>
   <button class="refresh-btn" id="refreshBtn" onclick="loadAll()">
     <span class="spin" id="spinIcon">↻</span> 刷新数据
   </button>
@@ -628,13 +636,42 @@
       <th style="width:40px"></th>
       <th onclick="sortBy('ticker')">代码</th>
       <th>公司名称</th>
-      <th>板块</th>
+      <th>
+        <div class="th-wrap">
+          <span class="th-label" onclick="sortBy('sector')">板块</span>
+          <select class="col-sel" id="colSector" onchange="applyFilters(); this.classList.toggle('filtered', this.value!='')">
+            <option value="">全部板块</option>
+            <option value="Technology">科技</option>
+            <option value="Healthcare">医疗健康</option>
+            <option value="Financials">金融</option>
+            <option value="Consumer Discretionary">可选消费</option>
+            <option value="Consumer Staples">必需消费</option>
+            <option value="Energy">能源</option>
+            <option value="Industrials">工业</option>
+            <option value="Utilities">公用事业</option>
+            <option value="Materials">材料</option>
+            <option value="Real Estate">房地产</option>
+            <option value="Communication Services">通信服务</option>
+          </select>
+        </div>
+      </th>
       <th onclick="sortBy('price')">现价</th>
       <th onclick="sortBy('change')">涨跌%</th>
       <th onclick="sortBy('ma5w')">5周均线</th>
       <th>近5周走势</th>
       <th onclick="sortBy('above_count')">站上周数</th>
-      <th>信号</th>
+      <th>
+        <div class="th-wrap">
+          <span class="th-label">信号</span>
+          <select class="col-sel" id="colSignal" onchange="applyFilters(); this.classList.toggle('filtered', this.value!='')">
+            <option value="">全部信号</option>
+            <option value="buy">▲ 买点</option>
+            <option value="sell">▼ 卖点</option>
+            <option value="watch">◆ 观察</option>
+            <option value="neutral">— 中性</option>
+          </select>
+        </div>
+      </th>
     </tr>
   </thead>
   <tbody id="tbody">
@@ -977,36 +1014,20 @@ function toggleWatchlist(ticker) {
 
 // ── SYNC: find or fetch a watchlist stock ─────────────────────
 async function syncWLStock(ticker) {
-  // first check if already in allStocks (loaded from main)
   const found = allStocks.find(s => s.ticker === ticker || s.ticker === ticker.replace('-','.'));
   if (found) {
-    if (!wlStocks.find(s => s.ticker === ticker)) {
-      wlStocks.push({...found, ticker});
-    }
-    renderWLTable();
-    renderWLPager();
-    return;
+    if (!wlStocks.find(s => s.ticker === ticker)) wlStocks.push({...found, ticker});
+    renderWLTable(); renderWLPager(); return;
   }
-  // otherwise fetch individually
-  let closes = null;
-  for (let pi = 0; pi < PROXIES.length; pi++) {
-    try { closes = await fetchWeeklyClose(ticker, pi); break; } catch(e) {}
-  }
-  if (closes && closes.length >= 5) {
+  const closes = await fetchWeeklyClose(ticker);
+  if (closes) {
     const sig = calcSignal(closes);
     if (sig && !wlStocks.find(s => s.ticker === ticker)) {
-      // try to find name/sector from SP500 list
       const meta = SP500.find(([t]) => t === ticker || t === ticker.replace('-','.'));
-      wlStocks.push({
-        ticker,
-        name:   meta ? meta[1] : ticker,
-        sector: meta ? meta[2] : '—',
-        ...sig
-      });
+      wlStocks.push({ ticker, name: meta?meta[1]:ticker, sector: meta?meta[2]:'—', ...sig });
     }
   }
-  renderWLTable();
-  renderWLPager();
+  renderWLTable(); renderWLPager();
 }
 
 // called after full loadAll to sync all watchlist stocks
@@ -1060,7 +1081,7 @@ function renderWLTable() {
     return;
   }
   if (!paged.length) {
-    tbody.innerHTML = `<tr><td colspan="10" class="empty">数据加载中… 请先点击「刷新数据」</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="10" class="empty">数据加载中… 请点击「刷新观察名单」</td></tr>`;
     return;
   }
 
@@ -1117,15 +1138,20 @@ updateWLCount();
 renderWLTags();
 
 
+// ── CORS Proxy 列表（4个轮换备用）──────────────────────────────
 const PROXIES = [
   "https://corsproxy.io/?",
   "https://api.allorigins.win/raw?url=",
+  "https://corsproxy.io/?",          // 重复corsproxy交替使用
+  "https://api.allorigins.win/raw?url=",
 ];
+
+// ── 全局代理轮询索引 ──────────────────────────────────────────
+let proxyRound = 0;
 
 // ── 全局状态 ──────────────────────────────────────────────────
 let allStocks = [];
 let filtered  = [];
-let currentFilter = 'all';
 let sortKey = null, sortDir = 1;
 let page = 1;
 const PAGE_SIZE = 25;
@@ -1137,24 +1163,36 @@ function setStatus(type, msg) {
   document.getElementById('statusMsg').textContent = msg;
 }
 
-// ── 抓取单只股票周线数据 ──────────────────────────────────────
-async function fetchWeeklyClose(ticker, proxyIdx = 0) {
-  // Yahoo Finance weekly chart API（取近3个月确保有5周+）
+// ── 抓取单只股票（带重试，最多3次）──────────────────────────────
+async function fetchWeeklyClose(ticker) {
   const end   = Math.floor(Date.now() / 1000);
-  const start = end - 86400 * 90; // 90天前
+  const start = end - 86400 * 90;
   const url   = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1wk&period1=${start}&period2=${end}`;
-  
-  const proxy = PROXIES[proxyIdx % PROXIES.length];
-  const resp  = await fetch(proxy + encodeURIComponent(url));
-  if (!resp.ok) throw new Error('HTTP ' + resp.status);
-  const json = await resp.json();
-  
-  const result = json?.chart?.result?.[0];
-  if (!result) throw new Error('no result');
-  
-  const closes = result.indicators?.quote?.[0]?.close || [];
-  const validCloses = closes.filter(c => c !== null && c !== undefined);
-  return validCloses;
+
+  const MAX_RETRY = 3;
+  for (let attempt = 0; attempt < MAX_RETRY; attempt++) {
+    // 每次尝试轮换到下一个proxy
+    const proxy = PROXIES[(proxyRound++) % PROXIES.length];
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000); // 8秒超时
+      const resp = await fetch(proxy + encodeURIComponent(url), { signal: controller.signal });
+      clearTimeout(timeout);
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      const json = await resp.json();
+      const result = json?.chart?.result?.[0];
+      if (!result) throw new Error('no result');
+      const closes = (result.indicators?.quote?.[0]?.close || []).filter(c => c != null);
+      if (closes.length < 5) throw new Error('not enough data');
+      return closes;
+    } catch(e) {
+      if (attempt < MAX_RETRY - 1) {
+        // 重试前等待：第1次300ms，第2次600ms
+        await new Promise(r => setTimeout(r, 300 * (attempt + 1)));
+      }
+    }
+  }
+  return null; // 3次都失败
 }
 
 // ── 计算信号 ──────────────────────────────────────────────────
@@ -1177,51 +1215,52 @@ function calcSignal(closes) {
   };
 }
 
-// ── 批量加载（限速，每请求间隔200ms避免被封）─────────────────
+// ── 批量加载（每批5只并发，批间隔500ms）──────────────────────
 async function loadAll() {
-  const btn = document.getElementById('refreshBtn');
+  const btn  = document.getElementById('refreshBtn');
   const spin = document.getElementById('spinIcon');
   btn.disabled = true;
   spin.classList.add('spinning');
-  
+  proxyRound = 0;
+
   allStocks = [];
   filtered  = [];
   renderTable();
 
   let done = 0, failed = 0;
-  setStatus('loading', `正在加载 0 / ${SP500.length} 只股票...`);
+  const BATCH = 5;      // 每批并发5只
+  const BATCH_DELAY = 500; // 批间隔500ms
 
-  for (const [ticker, name, sector] of SP500) {
-    let closes = null;
-    // 尝试两个 proxy
-    for (let pi = 0; pi < PROXIES.length; pi++) {
-      try {
-        closes = await fetchWeeklyClose(ticker, pi);
-        break;
-      } catch(e) { /* try next proxy */ }
+  setStatus('loading', `正在加载 0 / ${SP500.length} 只...`);
+
+  for (let i = 0; i < SP500.length; i += BATCH) {
+    const batch = SP500.slice(i, i + BATCH);
+
+    // 并发抓取这一批
+    const results = await Promise.all(
+      batch.map(async ([ticker, name, sector]) => {
+        const closes = await fetchWeeklyClose(ticker);
+        if (!closes) return null;
+        const sig = calcSignal(closes);
+        if (!sig) return null;
+        return { ticker, name, sector, ...sig };
+      })
+    );
+
+    for (const r of results) {
+      if (r) { allStocks.push(r); done++; }
+      else failed++;
     }
 
-    if (closes && closes.length >= 5) {
-      const sig = calcSignal(closes);
-      if (sig) {
-        allStocks.push({ ticker, name, sector, ...sig });
-        done++;
-      }
-    } else {
-      failed++;
-    }
+    setStatus('loading', `正在加载 ${done + failed} / ${SP500.length} 只 · 已成功 ${done} · 失败 ${failed}`);
+    applyFilters();
 
-    // 每加载一只就更新UI
-    if (done % 5 === 0 || done + failed === SP500.length) {
-      setStatus('loading', `正在加载 ${done} / ${SP500.length} 只 · 失败 ${failed} 只`);
-      applyFilters();
+    // 批间隔，避免代理限速
+    if (i + BATCH < SP500.length) {
+      await new Promise(r => setTimeout(r, BATCH_DELAY));
     }
-
-    // 礼貌延迟 200ms
-    await new Promise(r => setTimeout(r, 200));
   }
 
-  // 更新时间
   const now = new Date();
   document.getElementById('lastUpdated').textContent =
     `更新于 ${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
@@ -1233,20 +1272,73 @@ async function loadAll() {
   syncAllWLStocks();
 }
 
-// ── 过滤 / 排序 ──────────────────────────────────────────────
-function setFilter(f, btn) {
-  currentFilter = f;
-  document.querySelectorAll('.fbtn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
+// ── 仅刷新观察名单 ────────────────────────────────────────────
+async function loadWatchlistOnly() {
+  if (!watchlist.length) {
+    setStatus('error', '观察名单为空，请先添加股票');
+    return;
+  }
+  const btn  = document.getElementById('wlRefreshBtn');
+  const spin = document.getElementById('wlSpinIcon');
+  btn.disabled = true;
+  spin.classList.add('spinning');
+  proxyRound = 0;
+
+  wlStocks = [];
+  renderWLTable();
+
+  let done = 0, failed = 0;
+  setStatus('loading', `正在刷新观察名单 0 / ${watchlist.length} 只...`);
+
+  for (const ticker of watchlist) {
+    const closes = await fetchWeeklyClose(ticker);
+    if (closes) {
+      const sig = calcSignal(closes);
+      if (sig) {
+        const meta = SP500.find(([t]) => t === ticker || t === ticker.replace('-','.'));
+        wlStocks.push({
+          ticker,
+          name:   meta ? meta[1] : ticker,
+          sector: meta ? meta[2] : '—',
+          ...sig
+        });
+        done++;
+      } else { failed++; }
+    } else { failed++; }
+
+    setStatus('loading', `正在刷新观察名单 ${done + failed} / ${watchlist.length} 只...`);
+    renderWLTable();
+    renderWLPager();
+    await new Promise(r => setTimeout(r, 300));
+  }
+
+  const now = new Date();
+  document.getElementById('lastUpdated').textContent =
+    `更新于 ${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+
+  setStatus('ok', `观察名单刷新完成 · ${done} 只成功 · ${failed} 只失败`);
+  btn.disabled = false;
+  spin.classList.remove('spinning');
+  renderWLTable();
+  renderWLPager();
+}
+
+function resetFilters() {
+  document.getElementById('searchInput').value = '';
+  document.getElementById('colSector').value = '';
+  document.getElementById('colSector').classList.remove('filtered');
+  document.getElementById('colSignal').value = '';
+  document.getElementById('colSignal').classList.remove('filtered');
   applyFilters();
 }
 
 function applyFilters() {
   const q      = document.getElementById('searchInput').value.toLowerCase();
-  const sector = document.getElementById('sectorSel').value;
-  
+  const sector = document.getElementById('colSector').value;
+  const signal = document.getElementById('colSignal').value;
+
   filtered = allStocks.filter(s => {
-    if (currentFilter !== 'all' && s.signal !== currentFilter) return false;
+    if (signal && s.signal !== signal) return false;
     if (sector && s.sector !== sector) return false;
     if (q && !s.ticker.toLowerCase().includes(q) && !s.name.toLowerCase().includes(q)) return false;
     return true;
